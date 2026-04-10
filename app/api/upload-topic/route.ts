@@ -54,7 +54,9 @@ async function resolveTopicsDirectory(): Promise<string> {
   for (const [dir, count] of counts.entries()) {
     const isBetter = count > bestCount;
     const isTieAndPreferDefault =
-      count === bestCount && bestDir !== DEFAULT_TOPICS_DIR && dir === DEFAULT_TOPICS_DIR;
+      count === bestCount &&
+      bestDir !== DEFAULT_TOPICS_DIR &&
+      dir === DEFAULT_TOPICS_DIR;
     if (isBetter || isTieAndPreferDefault) {
       bestDir = dir;
       bestCount = count;
