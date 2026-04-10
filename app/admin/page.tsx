@@ -93,6 +93,7 @@ export default function AdminPage() {
   const [filename, setFilename] = useState('')
   const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [publishMeta, setPublishMeta] = useState<{ path?: string; branch?: string; note?: string } | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [preview, setPreview] = useState(false)
 
@@ -120,16 +121,22 @@ export default function AdminPage() {
   const handleUpload = async () => {
     if (!content || !filename) return
     setStatus('uploading')
+    setErrorMsg('')
+    setPublishMeta(null)
     try {
       const res = await fetch('/api/upload-topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug: filename, content }),
       })
-      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || `Upload failed (${res.status})`)
+      }
+      setPublishMeta({ path: data?.path, branch: data?.branch, note: data?.note })
       setStatus('success')
     } catch (e) {
-      setErrorMsg(String(e))
+      setErrorMsg(e instanceof Error ? e.message : String(e))
       setStatus('error')
     }
   }
@@ -357,8 +364,15 @@ export default function AdminPage() {
               fontSize: '0.875rem',
               fontFamily: 'Syne, sans-serif',
               fontWeight: 600,
+              lineHeight: 1.6,
             }}>
-              ✓ Topic published! <Link href={`/topic/${filename}`} style={{ color: '#10B981', marginLeft: '8px' }}>View it →</Link>
+              <div>
+                ✓ Topic published to {publishMeta?.path || 'content/topics'}{publishMeta?.branch ? ` (${publishMeta.branch})` : ''}.
+                <Link href={`/topic/${filename}`} style={{ color: '#10B981', marginLeft: '8px' }}>View it →</Link>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#7FD8AF', marginTop: '6px' }}>
+                {publishMeta?.note || 'If you are on a fixed preview URL, open the latest deployment or production domain after rebuild completes.'}
+              </div>
             </div>
           )}
 

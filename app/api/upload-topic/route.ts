@@ -4,6 +4,65 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_OWNER = process.env.GITHUB_OWNER;
 const GITHUB_REPO = process.env.GITHUB_REPO;
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main";
+const DEFAULT_TOPICS_DIR = "content/topics";
+
+interface GitTreeEntry {
+  path?: string;
+  type?: string;
+}
+
+interface GitTreeResponse {
+  tree?: GitTreeEntry[];
+}
+
+async function resolveTopicsDirectory(): Promise<string> {
+  if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
+    return DEFAULT_TOPICS_DIR;
+  }
+
+  const treeUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/trees/${encodeURIComponent(GITHUB_BRANCH)}?recursive=1`;
+  const treeRes = await fetch(treeUrl, {
+    headers: {
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    cache: "no-store",
+  });
+
+  if (!treeRes.ok) {
+    return DEFAULT_TOPICS_DIR;
+  }
+
+  const data = (await treeRes.json()) as GitTreeResponse;
+  const counts = new Map<string, number>();
+
+  for (const entry of data.tree || []) {
+    if (entry.type !== "blob" || !entry.path?.endsWith(".md")) continue;
+    const match = entry.path.match(/^(.*content\/topics)\/[^/]+\.md$/);
+    if (!match?.[1]) continue;
+    counts.set(match[1], (counts.get(match[1]) || 0) + 1);
+  }
+
+  if (counts.size === 0) {
+    return DEFAULT_TOPICS_DIR;
+  }
+
+  let bestDir = DEFAULT_TOPICS_DIR;
+  let bestCount = counts.get(DEFAULT_TOPICS_DIR) || 0;
+
+  for (const [dir, count] of counts.entries()) {
+    const isBetter = count > bestCount;
+    const isTieAndPreferDefault =
+      count === bestCount && bestDir !== DEFAULT_TOPICS_DIR && dir === DEFAULT_TOPICS_DIR;
+    if (isBetter || isTieAndPreferDefault) {
+      bestDir = dir;
+      bestCount = count;
+    }
+  }
+
+  return bestDir;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,7 +99,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const filePath = `content/topics/${slug}.md`;
+    const topicsDirectory = await resolveTopicsDirectory();
+    const filePath = `${topicsDirectory}/${slug}.md`;
     const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`;
 
     // Check if file already exists (need SHA to update)
@@ -87,6 +147,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       slug,
+      path: filePath,
+      branch: GITHUB_BRANCH,
       message: existingSha ? "Topic updated" : "Topic published",
       note: "Vercel is rebuilding. Live in ~30 seconds.",
     });
